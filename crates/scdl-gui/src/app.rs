@@ -128,7 +128,25 @@ impl ScdlApp {
             *v = (1.6e6 + (x.sin() * 0.55 + (x * 2.3).sin() * 0.3) * 9.0e5).max(0.0);
         }
 
-        self.state.results_label = "The Lost Ship — 10 tracks".into();
+        // Browse needs results too, otherwise `--demo` opens on the empty state
+        // and shows nothing of the view.
+        let demo_tracks: Vec<scdl_core::model::Track> = demo
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (title, artist, _, _))| {
+                let mut t: scdl_core::model::Track = serde_json::from_str(r#"{"id": 0}"#).ok()?;
+                t.id = 2000 + i as i64;
+                t.title = Some((*title).to_string());
+                t.duration = Some(240_000 + (i as i64 * 37_000));
+                t.user = Some(scdl_core::model::User {
+                    username: Some((*artist).to_string()),
+                    ..Default::default()
+                });
+                Some(t)
+            })
+            .collect();
+        self.state
+            .set_results("The Lost Ship — 7 tracks".into(), demo_tracks);
         self.state.log(LogLevel::Info, "downloading into ~/Music");
         self.state
             .log(LogLevel::Success, "pandadub — Planet Pillow  ->  ~/Music");
@@ -878,11 +896,21 @@ impl ScdlApp {
     }
 
     fn view_queue(&mut self, ui: &mut Ui, p: &Palette, time: f32) {
-        ui.label(
-            RichText::new("Queue")
-                .font(FontId::proportional(30.0))
-                .color(p.text),
-        );
+        let active = self.state.active_count();
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Queue")
+                    .font(FontId::proportional(30.0))
+                    .color(p.text),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if active > 0 && danger_button(ui, p, "Cancel").clicked() {
+                    self.bridge.send(Command::Cancel);
+                    self.state
+                        .toast(ToastKind::Warn, "cancelling — in-flight tracks will finish");
+                }
+            });
+        });
         ui.add_space(space::SM);
 
         if self.state.queue.is_empty() {
@@ -1503,6 +1531,31 @@ fn pill_button(ui: &mut Ui, p: &Palette, label: &str, enabled: bool) -> egui::Re
         } else {
             p.text_faint
         },
+    );
+    resp
+}
+
+/// An outlined button that turns red on hover, for destructive actions.
+fn danger_button(ui: &mut Ui, p: &Palette, label: &str) -> egui::Response {
+    let w = label.len() as f32 * 7.2 + 26.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::click());
+    let t = ui
+        .ctx()
+        .animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
+    ui.painter()
+        .rect_filled(rect, radius::PILL, p.err.gamma_multiply(t * 0.18));
+    ui.painter().rect_stroke(
+        rect,
+        radius::PILL,
+        Stroke::new(1.0, lerp_color(p.outline, p.err, t)),
+        StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(12.5),
+        lerp_color(p.text_dim, p.err, t),
     );
     resp
 }

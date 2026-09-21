@@ -5,7 +5,7 @@ members = ["crates/scdl-core", "crates/scdl-cli", "crates/scdl-gui"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.95"
 license = "GPL-2.0-or-later"
 
 [workspace.dependencies]

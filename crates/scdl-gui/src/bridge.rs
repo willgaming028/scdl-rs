@@ -13,7 +13,7 @@ use std::sync::Arc;
 use scdl_core::archive::Archive;
 use scdl_core::client::{Client, ClientConfig};
 use scdl_core::model::Track;
-use scdl_core::pipeline::{download_tracks, DownloadOptions, Event};
+use scdl_core::pipeline::{download_tracks_cancellable, Cancel, DownloadOptions, Event};
 use scdl_core::resolve::{resolve, ResolveOptions, Selector, Target};
 
 /// Sent from the UI into the worker.
@@ -29,6 +29,8 @@ pub enum Command {
     },
     /// Fetch cover art for a track, by id and URL.
     FetchArt { track_id: i64, url: String },
+    /// Stop the current run. In-flight tracks finish; nothing new starts.
+    Cancel,
 }
 
 /// Sent from the worker back to the UI.
@@ -110,6 +112,9 @@ async fn worker(
     ctx: egui::Context,
     config: ClientConfig,
 ) {
+    // One token for the whole worker; reset at the start of each run.
+    let cancel = Cancel::new();
+
     let client = match Client::new(config) {
         Ok(c) => c,
         Err(e) => {
@@ -135,6 +140,14 @@ async fn worker(
 
     while let Some(cmd) = async_rx.recv().await {
         match cmd {
+            Command::Cancel => {
+                cancel.cancel();
+                let _ = up_tx.send(Update::Note(
+                    "cancelled — in-flight tracks will finish".into(),
+                ));
+                ctx.request_repaint();
+            }
+
             Command::Resolve { input, selector } => {
                 let client = client.clone();
                 let up_tx = up_tx.clone();
@@ -182,6 +195,8 @@ async fn worker(
                 options,
                 archive_path,
             } => {
+                cancel.reset();
+                let cancel = cancel.clone();
                 let client = client.clone();
                 let up_tx = up_tx.clone();
                 let ctx = ctx.clone();
@@ -216,7 +231,15 @@ async fn worker(
                         })
                     };
 
-                    download_tracks(&client, tracks, &options, archive.clone(), ev_tx).await;
+                    download_tracks_cancellable(
+                        &client,
+                        tracks,
+                        &options,
+                        archive.clone(),
+                        ev_tx,
+                        cancel,
+                    )
+                    .await;
                     let _ = forward.await;
 
                     if let (Some(arch), Some(path)) = (&archive, &archive_path) {

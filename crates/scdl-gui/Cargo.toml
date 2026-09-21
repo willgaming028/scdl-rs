@@ -20,6 +20,4 @@ egui.workspace = true
 egui_extras.workspace = true
 image.workspace = true
 tokio.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true

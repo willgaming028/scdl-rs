@@ -121,6 +121,8 @@ New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\scdl" ; Copy-Ite
 
 ### What the build actually needs
 
+**Rust 1.95 or newer** (egui/eframe require it; `rustup update` if in doubt).
+
 Deliberately kept small: a C compiler and a linker, and that is it. TLS is
 [rustls](https://github.com/rustls/rustls) with the `ring` provider, so there is **no OpenSSL**;
 no dependency uses `pkg-config` or `cmake`. The finished binaries link only `libc`, `libgcc` and
@@ -214,14 +216,16 @@ Four views behind a nav rail whose active indicator slides between them.
 result cards with cover art that fade and slide in on a stagger, each lifting on hover.
 
 **Queue** — a hero panel for the current download: animated progress ring, live
-bytes / speed / ETA, a throughput sparkline with a gradient fill, and a spectrum along the
-bottom. Below it, one animated card per track with its own ring and a progress hairline. A log
+bytes / speed / ETA, a throughput sparkline with a gradient fill (real data), and a decorative
+spectrum along the bottom. Below it, one animated card per track with its own ring and a progress hairline. A log
 drawer sits underneath for the detail behind a failure.
 
 **Library** — everything downloaded this session, with thumbnails.
 
 **Settings** — bound to the real config: output folder, both name formats, parallel-download
 slider, format toggles, auth token (masked), theme, and an animation switch.
+
+A run in progress can be stopped with the Cancel button in the Queue header.
 
 ### The animation layer
 
@@ -238,7 +242,9 @@ Written by hand in `anim.rs` and `icons.rs` — no animation crate.
   cannot make the integrator explode.
 - **Easings** — `out_cubic`, `out_quint`, `out_back`, `out_elastic`, `smoothstep`, used
   deliberately: elastic for the selection tick's pop, quint for card entry, smoothstep for fades.
-- **Spectrum** — 84 bars with per-bar spring smoothing and peak markers that decay.
+- **Spectrum** — 84 bars with per-bar spring smoothing and peak markers that decay. It is
+  **decorative**: there is no audio decoding or FFT, and the bars are driven by layered sines.
+  The API takes a `&[f32]` of magnitudes, so real data could be fed in later.
 - **Toasts** — slide in, stack, and dismiss on a timed hairline.
 - **Vector icons** — every icon is painted, not a glyph. egui's bundled fonts don't cover `⌕`,
   `✓` or `☾`, which render as tofu boxes; painting them means the UI looks identical everywhere.
@@ -381,7 +387,7 @@ crates/scdl-gui/      the `scdl-gui` binary
 cargo test
 ```
 
-176 tests, no network required. The security-relevant ones are worth reading: path traversal via
+178 tests, no network required. The security-relevant ones are worth reading: path traversal via
 remote metadata in `naming.rs`, and the sync-deletion guards in `archive.rs`.
 
 ```bash
@@ -402,8 +408,13 @@ Headless, on a machine with no display:
 Xvfb :99 -screen 0 1600x1000x24 & sleep 2 && DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 cargo run --release -p scdl-gui -- --screenshot shot.png --view queue
 ```
 
-`--screenshot` implies `--demo`, so the frame is seeded with fixed state and needs no network —
-screenshots are reproducible.
+`--screenshot` implies `--demo`, so the frame is seeded with fixed state and needs no network.
+
+Note that frames are **not** pixel-identical between runs: animation is driven by wall-clock time,
+so the exact frame captured depends on timing. Screenshots are good for eyeballing a view and for
+catching a blank or broken render; they are not suitable for golden-image diffing today. Making
+them deterministic would mean pinning egui's clock through `raw_input_hook` and seeding the
+particle field from that same clock.
 
 ---
 
@@ -436,7 +447,9 @@ rather than saved as if they were the full track.
 - **429 handling** backs off but has never been triggered in testing, so the exact rate limit is
   unverified.
 - The `/me` response shape is inferred; it has not been exercised with a real token.
-- **No mid-run cancellation** in the GUI yet — closing the window stops it.
+- **Cancellation is per-track.** The Cancel button stops new tracks from starting and lets
+  in-flight ones finish their current file, rather than tearing down mid-write and leaving
+  partial files.
 
 ---
 

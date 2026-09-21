@@ -8,6 +8,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::archive::Archive;
@@ -152,6 +154,32 @@ impl ProgressSink for ChannelSink {
     }
 }
 
+/// A shared stop flag for a run.
+///
+/// Granularity is per track: a cancelled run stops *starting* tracks and lets
+/// in-flight ones finish their current file. That is deliberate — tearing down
+/// mid-write would leave partial files, and a track takes seconds, not minutes.
+#[derive(Debug, Clone, Default)]
+pub struct Cancel(Arc<AtomicBool>);
+
+impl Cancel {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    pub fn reset(&self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
 /// Summary of a completed run.
 #[derive(Debug, Clone, Default)]
 pub struct RunSummary {
@@ -173,6 +201,18 @@ pub async fn download_tracks(
     archive: Option<Arc<tokio::sync::Mutex<Archive>>>,
     tx: mpsc::UnboundedSender<Event>,
 ) -> RunSummary {
+    download_tracks_cancellable(client, tracks, opts, archive, tx, Cancel::new()).await
+}
+
+/// As [`download_tracks`], but stoppable through a [`Cancel`] token.
+pub async fn download_tracks_cancellable(
+    client: &Client,
+    tracks: Vec<Track>,
+    opts: &DownloadOptions,
+    archive: Option<Arc<tokio::sync::Mutex<Archive>>>,
+    tx: mpsc::UnboundedSender<Event>,
+    cancel: Cancel,
+) -> RunSummary {
     for (i, t) in tracks.iter().enumerate() {
         let _ = tx.send(Event::Queued {
             index: i,
@@ -186,6 +226,13 @@ pub async fn download_tracks(
     let mut handles = Vec::new();
 
     for (index, track) in tracks.into_iter().enumerate() {
+        if cancel.is_cancelled() {
+            let _ = tx.send(Event::Skipped {
+                index,
+                reason: "cancelled".to_string(),
+            });
+            continue;
+        }
         let permit = match Arc::clone(&semaphore).acquire_owned().await {
             Ok(p) => p,
             Err(_) => break,
@@ -195,10 +242,17 @@ pub async fn download_tracks(
         let archive = archive.clone();
         let tx = tx.clone();
 
+        let cancel = cancel.clone();
         handles.push(tokio::spawn(async move {
             let _permit = permit;
             let id = track.id;
-            let outcome = download_one(&client, &track, &opts, archive.clone(), index, &tx).await;
+            // Re-check after waiting for a slot: the user may have cancelled
+            // while this task sat in the queue.
+            let outcome = if cancel.is_cancelled() {
+                TrackOutcome::Skipped("cancelled".to_string())
+            } else {
+                download_one(&client, &track, &opts, archive.clone(), index, &tx).await
+            };
 
             match &outcome {
                 TrackOutcome::Downloaded { path, bytes } => {
@@ -650,5 +704,62 @@ mod tests {
         let mut txt = audio.to_path_buf();
         txt.set_extension("txt");
         assert_eq!(txt, Path::new("/music/The Lost Ship/03. Track.txt"));
+    }
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+
+    #[test]
+    fn cancel_token_is_shared_between_clones() {
+        let a = Cancel::new();
+        let b = a.clone();
+        assert!(!a.is_cancelled() && !b.is_cancelled());
+        b.cancel();
+        assert!(a.is_cancelled(), "cancel must be visible through a clone");
+        a.reset();
+        assert!(!b.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_run_downloads_nothing() {
+        let client = Client::new(crate::client::ClientConfig::default()).unwrap();
+        let tracks: Vec<Track> = (0..5)
+            .map(|i| {
+                let mut t: Track = serde_json::from_str(r#"{"id":0}"#).unwrap();
+                t.id = i;
+                t.title = Some(format!("t{i}"));
+                t
+            })
+            .collect();
+
+        let cancel = Cancel::new();
+        cancel.cancel();
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let summary = download_tracks_cancellable(
+            &client,
+            tracks,
+            &DownloadOptions::default(),
+            None,
+            tx,
+            cancel,
+        )
+        .await;
+
+        // Nothing hit the network; every track was skipped as cancelled.
+        assert_eq!(summary.completed, 0);
+        assert_eq!(summary.failed, 0);
+
+        let mut cancelled = 0;
+        while let Ok(ev) = rx.try_recv() {
+            if let Event::Skipped { reason, .. } = ev {
+                if reason == "cancelled" {
+                    cancelled += 1;
+                }
+            }
+        }
+        assert_eq!(cancelled, 5, "every track should report as cancelled");
     }
 }
