@@ -36,6 +36,31 @@ impl Default for Config {
     }
 }
 
+/// Expand a leading `~` to the user's home directory.
+///
+/// The shell does this for command-line arguments, but nothing expands it inside
+/// a config file — so `path = ~/Music` would otherwise create a directory
+/// literally named `~` in the working directory.
+pub fn expand_tilde(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    let rest = match trimmed.strip_prefix('~') {
+        Some(rest) => rest,
+        None => return PathBuf::from(trimmed),
+    };
+    // Only bare `~` and `~/...` are expanded; `~user/...` is left alone rather
+    // than guessed at.
+    if !(rest.is_empty() || rest.starts_with('/')) {
+        return PathBuf::from(trimmed);
+    }
+    let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()) else {
+        return PathBuf::from(trimmed);
+    };
+    match rest.strip_prefix('/') {
+        Some(tail) if !tail.is_empty() => home.join(tail),
+        _ => home,
+    }
+}
+
 /// Where the config lives, honouring `XDG_CONFIG_HOME` exactly as scdl does.
 pub fn default_config_path() -> PathBuf {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
@@ -83,7 +108,9 @@ impl Config {
         Ok(Config {
             client_id: get("client_id"),
             auth_token: get("auth_token"),
-            path: get("path").map(PathBuf::from).unwrap_or(defaults.path),
+            path: get("path")
+                .map(|p| expand_tilde(&p))
+                .unwrap_or(defaults.path),
             name_format: get("name_format").unwrap_or(defaults.name_format),
             playlist_name_format: get("playlist_name_format")
                 .unwrap_or(defaults.playlist_name_format),
@@ -253,6 +280,35 @@ mod tests {
         std::fs::write(&p, "[scdl]\nauth_token = t\n").unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert_eq!(insecure_permissions(&p), Some(0o644));
+    }
+
+    #[test]
+    fn tilde_in_the_config_path_is_expanded() {
+        let home = directories::BaseDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf();
+        assert_eq!(expand_tilde("~/Music"), home.join("Music"));
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(expand_tilde("  ~/Music  "), home.join("Music"));
+        // Absolute and relative paths pass through untouched.
+        assert_eq!(expand_tilde("/srv/media"), PathBuf::from("/srv/media"));
+        assert_eq!(expand_tilde("."), PathBuf::from("."));
+        // `~other` is another user's home; we do not guess at it.
+        assert_eq!(expand_tilde("~bob/Music"), PathBuf::from("~bob/Music"));
+    }
+
+    #[test]
+    fn config_file_with_a_tilde_path_loads_expanded() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("scdl.cfg");
+        std::fs::write(&p, "[scdl]\npath = ~/Music\n").unwrap();
+        let c = Config::load(&p).unwrap();
+        let home = directories::BaseDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf();
+        assert_eq!(c.path, home.join("Music"));
     }
 
     #[test]
