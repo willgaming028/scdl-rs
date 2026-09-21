@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/scdl-core", "crates/scdl-cli"]
+members = ["crates/scdl-core", "crates/scdl-cli", "crates/scdl-gui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +10,10 @@ license = "GPL-2.0-or-later"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
+eframe = { version = "0.36.2", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+egui = "0.36.2"
+egui_extras = { version = "0.36.2", features = ["image"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
 clap = { version = "4.6.6", features = ["derive", "wrap_help", "env"] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
@@ -21,7 +25,8 @@ m3u8-rs = "6.0.1"
 percent-encoding = "2.3.2"
 ratatui = "0.30.2"
 regex = "1.13.1"
-reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "query", "rustls", "http2", "charset", "gzip", "brotli"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "query", "rustls-no-provider", "http2", "charset", "gzip", "brotli"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rust-ini = "0.21.3"
 sanitize-filename = "0.6.0"
 serde = { version = "1.0.229", features = ["derive"] }

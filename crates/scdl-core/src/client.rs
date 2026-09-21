@@ -122,8 +122,25 @@ pub struct Client {
     inner: Arc<Inner>,
 }
 
+/// Install rustls' crypto provider exactly once per process.
+///
+/// We select the `ring` provider rather than the default `aws-lc-rs` because
+/// `aws-lc-sys` requires cmake to build, which is an unwelcome prerequisite for
+/// anyone building this from source. Choosing a provider explicitly means
+/// rustls will not pick one for us, so this must run before the first client.
+fn install_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // An error here means a provider was already installed by the host
+        // application, which is fine — theirs wins.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 impl Client {
     pub fn new(config: ClientConfig) -> Result<Self> {
+        install_crypto_provider();
+
         let http = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .timeout(config.timeout.unwrap_or(Duration::from_secs(60)))

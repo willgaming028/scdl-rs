@@ -1,0 +1,25 @@
+[package]
+name = "scdl-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Animated desktop GUI for scdl"
+
+[[bin]]
+name = "scdl-gui"
+path = "src/main.rs"
+
+[dependencies]
+scdl-core = { path = "../scdl-core" }
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+image.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

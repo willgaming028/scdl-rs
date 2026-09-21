@@ -15,6 +15,7 @@ percent-encoding.workspace = true
 
 regex.workspace = true
 reqwest.workspace = true
+rustls.workspace = true
 rust-ini.workspace = true
 sanitize-filename.workspace = true
 serde.workspace = true
