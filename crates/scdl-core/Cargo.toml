@@ -1,0 +1,33 @@
+[package]
+name = "scdl-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure-Rust SoundCloud API client, downloader and tagger"
+
+[dependencies]
+chrono.workspace = true
+futures-util.workspace = true
+lofty.workspace = true
+m3u8-rs.workspace = true
+percent-encoding.workspace = true
+
+regex.workspace = true
+reqwest.workspace = true
+rust-ini.workspace = true
+sanitize-filename.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+bytes = "1"
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+unicode-segmentation.workspace = true
+url.workspace = true
+directories.workspace = true
+
+[dev-dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

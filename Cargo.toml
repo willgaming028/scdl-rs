@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = ["crates/scdl-core", "crates/scdl-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "GPL-2.0-or-later"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+clap = { version = "4.6.6", features = ["derive", "wrap_help", "env"] }
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+directories = "6.0.0"
+futures-util = "0.3.34"
+indicatif = "0.18.6"
+lofty = "0.25.4"
+m3u8-rs = "6.0.1"
+percent-encoding = "2.3.2"
+ratatui = "0.30.2"
+regex = "1.13.1"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "query", "rustls", "http2", "charset", "gzip", "brotli"] }
+rust-ini = "0.21.3"
+sanitize-filename = "0.6.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync", "process", "signal", "time"] }
+tokio-util = { version = "0.7.19", features = ["io"] }
+unicode-segmentation = "1.13.3"
+url = "2.5.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

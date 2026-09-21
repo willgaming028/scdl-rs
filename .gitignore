@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+*.pdb
+.env
+*.mp3
+*.m4a
+*.opus
+*.flac
+*.wav
+*.aiff
+/downloads
